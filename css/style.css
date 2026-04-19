@@ -1,0 +1,121 @@
+/* コルトン丘テロワールマップ Phase 1: ベースレイアウト */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Helvetica Neue", "Hiragino Sans", "Yu Gothic", sans-serif;
+  color: #222;
+}
+
+#header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid #ddd;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+#header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+#header .subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #666;
+}
+
+#map {
+  position: absolute;
+  top: 60px;     /* ヘッダ分の下げ */
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+/* 凡例 */
+#legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+#legend .legend-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+#legend .legend-row {
+  display: flex;
+  align-items: center;
+  margin: 3px 0;
+}
+#legend .swatch {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  margin-right: 6px;
+  border: 1px solid #555;
+}
+#legend .swatch.grand-cru   { background: #8b0000; }
+#legend .swatch.premier-cru { background: #c45a5a; }
+#legend .swatch.village     { background: #dfa0a0; }
+
+/* ポップアップ */
+.leaflet-popup-content {
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 320px;
+}
+.popup-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #eee;
+}
+.popup-hier {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-size: 11px;
+  color: #fff;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+.popup-hier.grand-cru   { background: #8b0000; }
+.popup-hier.premier-cru { background: #c45a5a; }
+.popup-hier.village     { background: #a8a8a8; }
+.popup-section {
+  margin-top: 8px;
+}
+.popup-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 2px;
+}
+.popup-terroir {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: #444;
+}
+.popup-terroir span {
+  white-space: nowrap;
+}
+.popup-text {
+  font-size: 12px;
+  color: #333;
+  margin: 0;
+}
