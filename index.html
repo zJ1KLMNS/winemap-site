@@ -15,14 +15,21 @@
 <body>
   <div id="header">
     <h1>コルトン丘テロワールマップ</h1>
-    <p class="subtitle">WineMap プロト（Phase 1: ベースレイヤ表示）</p>
+    <p class="subtitle">WineMap プロト（Phase 5 S3: レイヤ切替・フィルタ）</p>
   </div>
   <div id="map"></div>
+
+  <div id="view-control">
+    <div class="vc-title">表示モード</div>
+    <label><input type="radio" name="view" value="hierarchy" checked> 階層</label>
+    <label><input type="radio" name="view" value="elevation"> 標高</label>
+    <label><input type="radio" name="view" value="aspect"> 方位</label>
+  </div>
+
   <div id="legend">
-    <div class="legend-title">階層</div>
-    <div class="legend-row"><span class="swatch grand-cru"></span>グラン・クリュ</div>
-    <div class="legend-row"><span class="swatch premier-cru"></span>プルミエ・クリュ</div>
-    <div class="legend-row"><span class="swatch village"></span>ヴィラージュ</div>
+    <div class="legend-title" id="legend-title">階層</div>
+    <div id="legend-body"></div>
+    <div class="legend-hint" id="legend-hint"></div>
   </div>
   <script src="js/map.js"></script>
 </body>
