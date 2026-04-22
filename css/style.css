@@ -64,6 +64,26 @@ html, body {
   margin-right: 4px;
   vertical-align: middle;
 }
+#view-control #reset-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #333;
+  background: #f5f5f5;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  cursor: pointer;
+}
+#view-control #reset-btn:hover {
+  background: #e8e8e8;
+  border-color: #888;
+}
+#view-control #reset-btn:active {
+  background: #dcdcdc;
+}
 
 /* 凡例 */
 #legend {
@@ -124,6 +144,41 @@ html, body {
 /* 背景地図切替コントロール（Leaflet 標準） */
 .leaflet-control-layers {
   font-size: 12px;
+}
+
+/* ロード中スピナー（初回 GeoJSON 読込中の overlay） */
+#loading-spinner {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+}
+#loading-spinner.visible {
+  display: flex;
+}
+#loading-spinner .spinner-ring {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #d0d0d0;
+  border-top-color: #8b0000;
+  border-radius: 50%;
+  animation: spinner-rotate 0.9s linear infinite;
+}
+#loading-spinner .spinner-text {
+  font-size: 12px;
+  color: #555;
+}
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
 }
 
 /* ポップアップ */

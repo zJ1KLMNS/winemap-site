@@ -2,9 +2,11 @@
  * コルトン丘テロワールマップ — Phase 5 S3
  *
  * 機能:
- *   - 背景地図切替（OSM / 衛星 / 地形）
+ *   - 背景地図切替（OSM / IGN BDORTHO / IGN Plan V2 / OpenTopoMap）
+ *   - 陰影起伏 overlay（IGN ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW）
  *   - 表示モード切替（階層 / 標高 / 方位）
  *   - 階層フィルタ（GC / PC / Village 表示トグル）
+ *   - リセットボタン（コルトン周辺に戻す）
  *   - 属性ポップアップ（denom_ja / 階層 / 標高・斜度・方位 / name_origin / notes）
  */
 
@@ -44,19 +46,43 @@ const baseLayers = {
   }),
 };
 baseLayers['標準地図（OSM）'].addTo(map);
-L.control.layers(baseLayers, null, { position: 'topleft', collapsed: false }).addTo(map);
+
+// === 2.5 オーバーレイレイヤ（IGN 陰影起伏） ===
+// SHADOW は共通テンプレートと違い STYLE=estompage_grayscale / TILEMATRIXSET=PM_0_15（最大 z15）
+// 背景地図と掛け算合成（mix-blend-mode: multiply）するため専用 pane を使う。
+// テロワール可視化の目的上、畑ポリゴン(overlayPane=400)より「上」に配置して
+// 陰影が畑の色にも焼き込まれるようにする（畑内の斜面が見える）。
+// markerPane(600) / popupPane(700) より下なので、ポップアップは陰影の上に出る。
+map.createPane('hillshade');
+map.getPane('hillshade').style.zIndex = 450;
+map.getPane('hillshade').style.mixBlendMode = 'multiply';
+
+const IGN_SHADOW_URL = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+  '&LAYER=ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW&STYLE=estompage_grayscale&FORMAT=image/png' +
+  '&TILEMATRIXSET=PM_0_15&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+const overlayLayers = {
+  '陰影起伏（IGN）': L.tileLayer(IGN_SHADOW_URL, {
+    ...TILE_COMMON, maxZoom: 15, opacity: 0.85, pane: 'hillshade',
+    attribution: `${IGN_ATTRIB} — Estompage (BD Alti®)`
+  }),
+};
+L.control.layers(baseLayers, overlayLayers, { position: 'topleft', collapsed: false }).addTo(map);
 
 // === 3. 表示モードの状態 ===
 const state = {
   viewMode: 'hierarchy',
   hierarchyFilter: { 'Grand Cru': true, 'Premier Cru': true, 'Village': true },
+  hillshadeOn: false,  // 陰影起伏 overlay の ON/OFF に連動
 };
+
+// 陰影起伏 ON 時に畑の塗りを薄くする係数（地形を透過させる）
+const HILLSHADE_FILL_FACTOR = 0.45;
 
 // === 4. 階層モード ===
 const HIER_STYLE = {
-  'Grand Cru':   { color: '#5a0000', fillColor: '#8b0000', weight: 1.2, fillOpacity: 0.45, label: 'グラン・クリュ', cls: 'grand-cru' },
-  'Premier Cru': { color: '#7a2a2a', fillColor: '#c45a5a', weight: 1.0, fillOpacity: 0.35, label: 'プルミエ・クリュ', cls: 'premier-cru' },
-  'Village':     { color: '#888888', fillColor: '#dfa0a0', weight: 0.8, fillOpacity: 0.25, label: 'ヴィラージュ', cls: 'village' },
+  'Grand Cru':   { color: '#5a0000', fillColor: '#8b0000', weight: 1.8, fillOpacity: 0.45, label: 'グラン・クリュ', cls: 'grand-cru' },
+  'Premier Cru': { color: '#7a2a2a', fillColor: '#c45a5a', weight: 1.3, fillOpacity: 0.35, label: 'プルミエ・クリュ', cls: 'premier-cru' },
+  'Village':     { color: '#888888', fillColor: '#dfa0a0', weight: 1.0, fillOpacity: 0.25, label: 'ヴィラージュ', cls: 'village' },
 };
 const DEFAULT_STYLE = { color: '#666', fillColor: '#ccc', weight: 0.8, fillOpacity: 0.2, label: '—', cls: 'village' };
 
@@ -106,11 +132,16 @@ const HIDDEN_STYLE = { opacity: 0, fillOpacity: 0, weight: 0, interactive: false
 
 function currentStyle(feature) {
   if (!state.hierarchyFilter[feature.properties.hierarchy]) return HIDDEN_STYLE;
+  let s;
   switch (state.viewMode) {
-    case 'elevation': return styleByElevation(feature);
-    case 'aspect':    return styleByAspect(feature);
-    default:          return styleByHierarchy(feature);
+    case 'elevation': s = styleByElevation(feature); break;
+    case 'aspect':    s = styleByAspect(feature); break;
+    default:          s = styleByHierarchy(feature);
   }
+  if (state.hillshadeOn) {
+    s = { ...s, fillOpacity: s.fillOpacity * HILLSHADE_FILL_FACTOR };
+  }
+  return s;
 }
 
 // === 8. 方位ラベル変換（ポップアップ用） ===
@@ -156,7 +187,8 @@ function renderLegend() {
         <span class="swatch ${s.cls}"></span>${s.label}
       </div>`;
     }).join('');
-    legendHint.textContent = '';
+    const allOff = Object.values(state.hierarchyFilter).every(v => !v);
+    legendHint.textContent = allOff ? 'すべて非表示中。凡例をクリックして階層を表示してください' : '';
   } else if (state.viewMode === 'elevation') {
     legendTitle.textContent = '標高（elev_mean）';
     legendBody.innerHTML = ELEV_BUCKETS.map(b =>
@@ -174,6 +206,8 @@ function renderLegend() {
 
 // === 11. GeoJSON 読み込み + 描画 ===
 let geojsonLayer = null;
+let initialBounds = null;
+const spinner = document.getElementById('loading-spinner');
 
 fetch('data/bourgogne/corton_terroir.geojson')
   .then(res => {
@@ -196,12 +230,15 @@ fetch('data/bourgogne/corton_terroir.geojson')
       }
     }).addTo(map);
 
-    map.fitBounds(geojsonLayer.getBounds(), { padding: [20, 20] });
+    initialBounds = geojsonLayer.getBounds();
+    map.fitBounds(initialBounds, { padding: [20, 20] });
     console.log(`GeoJSON 読込完了: ${geojson.features.length} features`);
     renderLegend();
+    spinner.classList.remove('visible');
   })
   .catch(err => {
     console.error(err);
+    spinner.classList.remove('visible');
     alert(`GeoJSON 読込エラー: ${err.message}`);
   });
 
@@ -225,6 +262,25 @@ legendBody.addEventListener('click', e => {
   if (!row) return;
   const key = row.dataset.hier;
   state.hierarchyFilter[key] = !state.hierarchyFilter[key];
+  restyleAll();
+  renderLegend();
+});
+
+// 陰影起伏 overlay の ON/OFF に連動して畑の塗りを調整
+const HILLSHADE_OVERLAY_NAME = '陰影起伏（IGN）';
+map.on('overlayadd', e => {
+  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = true; restyleAll(); }
+});
+map.on('overlayremove', e => {
+  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = false; restyleAll(); }
+});
+
+// リセット: 初期ビュー + 階層フィルタ全ON + 階層モードに戻す
+document.getElementById('reset-btn').addEventListener('click', () => {
+  state.viewMode = 'hierarchy';
+  state.hierarchyFilter = { 'Grand Cru': true, 'Premier Cru': true, 'Village': true };
+  document.querySelector('input[name="view"][value="hierarchy"]').checked = true;
+  if (initialBounds) map.fitBounds(initialBounds, { padding: [20, 20] });
   restyleAll();
   renderLegend();
 });

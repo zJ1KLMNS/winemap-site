@@ -24,12 +24,18 @@
     <label><input type="radio" name="view" value="hierarchy" checked> 階層</label>
     <label><input type="radio" name="view" value="elevation"> 標高</label>
     <label><input type="radio" name="view" value="aspect"> 方位</label>
+    <button id="reset-btn" type="button" title="コルトン周辺に戻る">↺ コルトンに戻る</button>
   </div>
 
   <div id="legend">
     <div class="legend-title" id="legend-title">階層</div>
     <div id="legend-body"></div>
     <div class="legend-hint" id="legend-hint"></div>
+  </div>
+
+  <div id="loading-spinner" class="visible">
+    <div class="spinner-ring"></div>
+    <div class="spinner-text">データを読み込み中…</div>
   </div>
   <script src="js/map.js"></script>
 </body>
