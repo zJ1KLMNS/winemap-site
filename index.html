@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>コルトン丘テロワールマップ — WineMap プロト</title>
+  <title>WineMap — 仏ワイン AOC テロワールマップ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin="">
@@ -14,22 +14,19 @@
 </head>
 <body>
   <div id="header">
-    <h1>コルトン丘テロワールマップ</h1>
-    <p class="subtitle">WineMap プロト（Phase 5 S3: レイヤ切替・フィルタ）</p>
+    <div class="header-row">
+      <h1>WineMap</h1>
+      <span class="subtitle">仏ワイン AOC テロワールマップ（Phase 2 全仏、Champagne 除く）</span>
+    </div>
+    <div id="search-box">
+      <input type="search" id="search-input" placeholder="AOC 名・climat 名で検索（例: Margaux, Chambertin, Châteauneuf）" autocomplete="off">
+      <ul id="search-results"></ul>
+    </div>
   </div>
   <div id="map"></div>
 
-  <div id="view-control">
-    <div class="vc-title">表示モード</div>
-    <label><input type="radio" name="view" value="hierarchy" checked> 階層</label>
-    <label><input type="radio" name="view" value="elevation"> 標高</label>
-    <label><input type="radio" name="view" value="aspect"> 方位</label>
-    <label><input type="radio" name="view" value="geology"> 地質</label>
-    <button id="reset-btn" type="button" title="コルトン周辺に戻る">↺ コルトンに戻る</button>
-  </div>
-
   <div id="legend">
-    <div class="legend-title" id="legend-title">階層</div>
+    <div class="legend-title" id="legend-title">階層（クリックで表示切替）</div>
     <div id="legend-body"></div>
     <div class="legend-hint" id="legend-hint"></div>
   </div>

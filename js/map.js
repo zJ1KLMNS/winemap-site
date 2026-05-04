@@ -1,35 +1,42 @@
 /**
- * コルトン丘テロワールマップ — Phase 5 S3
+ * WineMap Phase 2 — 仏ワイン AOC 全土テロワールマップ（Champagne 除く）
  *
  * 機能:
  *   - 背景地図切替（OSM / IGN BDORTHO / IGN Plan V2 / OpenTopoMap）
- *   - 陰影起伏 overlay（IGN ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW）
- *   - 表示モード切替（階層 / 標高 / 方位 / 地質）— 相互排他
- *   - 階層フィルタ（GC / PC / Village 表示トグル）— 全モードに適用
- *   - リセットボタン（コルトン周辺に戻す）
- *   - 属性ポップアップ（階層/標高/方位モード: 畑情報 / 地質モード: 畑×地質情報）
+ *   - 陰影起伏 overlay（IGN ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW、最大 z15）
+ *   - 5 階層カラーリング: Grand Cru / Premier Cru / Régionale / Village / AOC
+ *   - 階層フィルタ（凡例クリックで表示切替）
+ *   - 検索バー: 1,277 denom を fuzzy match、結果クリックで該当 AOC へ fly
+ *   - ポップアップ: app / denom / hierarchy / dt / dept
  *
- * 注: 畑ラベル（denom 名の常時表示）は 2026-04-23 に試作したが、Leaflet 標準に
- *     衝突回避機構がなく小さい畑で重なるため、一旦撤去。後日 LabelTextCollision
- *     プラグイン等を検討予定。
+ * データ:
+ *   - data/france/inao_france_detail.geojson: GC/PC/Village 1,003 features（denom 単位、約 1 MB）
+ *   - data/france/search-index.json:          1,277 denom のメタデータ + WGS84 centroid
+ *
+ * 注: Régionale/AOC（Bordeaux 全体・Loire 全体等）の広域ポリゴン表示は
+ *     ファイルサイズが配信不可（dissolve + tolerance 500m でも 33 MB）のため、
+ *     現状は検索インデックス経由でのみ到達可能（fly to centroid）。
+ *     ベクトルタイル化で解決予定（Phase 2 ステップ 5+）。
+ *
+ * スコープ注: INAO delim-parcellaire 対象 355 AOC。Champagne・Coteaux Champenois・
+ *             Rosé des Riceys は元データに未収録のため白地表示（Phase 2.5 で別ソース調査予定）。
  */
 
-// === 1. 地図の初期化 ===
-// コート・ドール銘醸地帯（ジュヴレ〜サントネーの帯）を表示範囲とする
-const COTE_DOR_BOUNDS = L.latLngBounds([46.90, 4.65], [47.35, 5.05]);
+// === 1. 地図初期化（仏全土を表示） ===
+const FRANCE_BOUNDS = L.latLngBounds([41.0, -5.5], [51.5, 10.5]);
 const map = L.map('map', {
   zoomControl: true,
-  minZoom: 11,
-  maxBounds: COTE_DOR_BOUNDS,
-  maxBoundsViscosity: 0.8,
-}).setView([47.073, 4.865], 14);
+  minZoom: 5,
+  maxBounds: FRANCE_BOUNDS,
+  maxBoundsViscosity: 0.6,
+}).setView([46.5, 2.5], 6);
 
-// === 2. 背景タイル（4種切替） ===
+// === 2. 背景タイル ===
 const IGN_WMTS = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
                  '&LAYER={layer}&STYLE=normal&FORMAT={fmt}' +
                  '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
 const IGN_ATTRIB = '© <a href="https://geoservices.ign.fr/">IGN-F/Géoportail</a>';
-const TILE_COMMON = { bounds: COTE_DOR_BOUNDS, minZoom: 11 };
+const TILE_COMMON = { minZoom: 5 };
 
 const baseLayers = {
   '標準地図（OSM）': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -51,338 +58,141 @@ const baseLayers = {
 };
 baseLayers['標準地図（OSM）'].addTo(map);
 
-// === 2.5 オーバーレイレイヤ ===
-// Leaflet の pane z-index 設計:
-//   tilePane=200 / overlayPane=400（畑ポリゴン） / geology=420 / hillshade=450(multiply) / markerPane=600
-// geology は畑の上・hillshade の下。地質 ON 時は畑の fillOpacity を薄くして地質色を見せる。
-map.createPane('geology');
-map.getPane('geology').style.zIndex = 420;
-
+// 陰影起伏 overlay（zoom 15 まで）
 map.createPane('hillshade');
 map.getPane('hillshade').style.zIndex = 450;
 map.getPane('hillshade').style.mixBlendMode = 'multiply';
 
-// SHADOW は共通テンプレートと違い STYLE=estompage_grayscale / TILEMATRIXSET=PM_0_15（最大 z15）
 const IGN_SHADOW_URL = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
   '&LAYER=ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW&STYLE=estompage_grayscale&FORMAT=image/png' +
   '&TILEMATRIXSET=PM_0_15&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
 
 const HILLSHADE_OVERLAY_NAME = '陰影起伏（IGN）';
-
 const overlayLayers = {
   [HILLSHADE_OVERLAY_NAME]: L.tileLayer(IGN_SHADOW_URL, {
-    ...TILE_COMMON, maxZoom: 15, opacity: 0.85, pane: 'hillshade',
+    minZoom: 5, maxZoom: 15, opacity: 0.85, pane: 'hillshade',
     attribution: `${IGN_ATTRIB} — Estompage (BD Alti®)`
   }),
 };
-L.control.layers(baseLayers, overlayLayers, { position: 'topleft', collapsed: false }).addTo(map);
+L.control.layers(baseLayers, overlayLayers, { position: 'topleft', collapsed: true }).addTo(map);
 
-// === 3. 表示モードの状態 ===
-const state = {
-  viewMode: 'hierarchy',  // hierarchy / elevation / aspect / geology の相互排他
-  hierarchyFilter: { 'Grand Cru': true, 'Premier Cru': true, 'Village': true },
-  hillshadeOn: false,
-};
-
-// 陰影起伏 ON 時に畑の塗りを薄くする係数（地形を透過させる）
-const HILLSHADE_FILL_FACTOR = 0.45;
-
-// id_denom → hierarchy 対応表（地質レイヤで階層フィルタを効かせるため）
-const hierarchyByIdDenom = {};
-
-// === 3.5 地質 Categorized 配色（QGIS add_parcel_geology_layer.py と同じ色） ===
-// 12分類。notation 順は CSV（geology-ja-mapping.csv）に準拠
-const GEOLOGY_CATEGORIES = [
-  { notation: 'j3a',  label: 'j3a コンブランシアン石灰岩',      color: '#a8d8c0' },
-  { notation: 'j4a',  label: 'j4a ダル・ナクレ',               color: '#7ec097' },
-  { notation: 'j5',   label: 'j5 鉄質魚卵状石灰岩',            color: '#4e9b70' },
-  { notation: 'j5a',  label: 'j5a 水硬性石灰岩',              color: '#b89ec0' },
-  { notation: 'j5b',  label: 'j5b マール・泥灰質石灰岩',        color: '#8a6494' },
-  { notation: 'Fu',   label: 'Fu サン・コーム層（マール）',      color: '#e6a95a' },
-  { notation: 'C',    label: 'C 斜面崩積物',                  color: '#d4b896' },
-  { notation: 'GP',   label: 'GP 周氷河性角礫',                color: '#c19a6b' },
-  { notation: 'p-IV', label: 'p-IV ヴィラフランキアン',          color: '#f0e68c' },
-  { notation: 'Fz',   label: 'Fz 新期沖積層',                 color: '#fbc687' },
-  { notation: 'Fy',   label: 'Fy サン・ユザージュ段丘',          color: '#f4a582' },
-  { notation: 'X',    label: 'X 人工堆積物・盛土',              color: '#999999' },
-];
-const GEOLOGY_COLOR_BY_NOTATION = Object.fromEntries(
-  GEOLOGY_CATEGORIES.map(c => [c.notation, c.color])
-);
-const GEOLOGY_DEFAULT_COLOR = '#cccccc';
-
-function styleByGeology(feature) {
-  const h = hierarchyByIdDenom[feature.properties.id_denom];
-  if (h && !state.hierarchyFilter[h]) return HIDDEN_STYLE;
-  const color = GEOLOGY_COLOR_BY_NOTATION[feature.properties.notation] || GEOLOGY_DEFAULT_COLOR;
-  // 陰影起伏 ON 時は地形を透過させるため地質を薄く
-  const fillOpacity = state.hillshadeOn ? 0.55 * HILLSHADE_FILL_FACTOR : 0.55;
-  return { color: '#444', fillColor: color, weight: 0.3, fillOpacity };
-}
-
-// === 4. 階層モード ===
+// === 3. 5 階層スタイル定義 ===
 const HIER_STYLE = {
-  'Grand Cru':   { color: '#5a0000', fillColor: '#8b0000', weight: 1.8, fillOpacity: 0.45, label: 'グラン・クリュ', cls: 'grand-cru' },
-  'Premier Cru': { color: '#7a2a2a', fillColor: '#c45a5a', weight: 1.3, fillOpacity: 0.35, label: 'プルミエ・クリュ', cls: 'premier-cru' },
-  'Village':     { color: '#888888', fillColor: '#dfa0a0', weight: 1.0, fillOpacity: 0.25, label: 'ヴィラージュ', cls: 'village' },
+  'Grand Cru':   { color: '#5a0000', fillColor: '#8b0000', weight: 1.5, fillOpacity: 0.55, label: 'グラン・クリュ', cls: 'grand-cru' },
+  'Premier Cru': { color: '#7a2a2a', fillColor: '#c45a5a', weight: 1.0, fillOpacity: 0.45, label: 'プルミエ・クリュ', cls: 'premier-cru' },
+  'Régionale':   { color: '#2a4a8a', fillColor: '#4a6cbd', weight: 0.8, fillOpacity: 0.20, label: 'レジョナル', cls: 'regionale' },
+  'Village':     { color: '#3a6aa0', fillColor: '#87b1de', weight: 0.8, fillOpacity: 0.40, label: 'ヴィラージュ', cls: 'village' },
+  'AOC':         { color: '#666',    fillColor: '#b0b0b0', weight: 0.5, fillOpacity: 0.30, label: 'AOC（その他）', cls: 'aoc' },
 };
-const DEFAULT_STYLE = { color: '#666', fillColor: '#ccc', weight: 0.8, fillOpacity: 0.2, label: '—', cls: 'village' };
-
-function styleByHierarchy(feature) {
-  return HIER_STYLE[feature.properties.hierarchy] || DEFAULT_STYLE;
-}
-
-// === 5. 標高モード（4段階のシーケンシャルカラー） ===
-const ELEV_BUCKETS = [
-  { max: 250, color: '#fef0d9', label: '〜250m' },
-  { max: 280, color: '#fdcc8a', label: '250〜280m' },
-  { max: 310, color: '#fc8d59', label: '280〜310m' },
-  { max: Infinity, color: '#d7301f', label: '310m〜' },
-];
-
-function styleByElevation(feature) {
-  const e = feature.properties.elev_mean;
-  const bucket = ELEV_BUCKETS.find(b => e != null && e < b.max) || ELEV_BUCKETS[ELEV_BUCKETS.length - 1];
-  return { color: '#555', fillColor: bucket.color, weight: 0.8, fillOpacity: 0.55 };
-}
-
-// === 6. 方位モード（8方位カテゴリカラー） ===
-const ASPECT_DIRS = [
-  { label: '北',   cls: 'aspect-n',  color: '#9e9e9e' },
-  { label: '北東', cls: 'aspect-ne', color: '#c6b34b' },
-  { label: '東',   cls: 'aspect-e',  color: '#e89c3a' },
-  { label: '南東', cls: 'aspect-se', color: '#e06a3a' },
-  { label: '南',   cls: 'aspect-s',  color: '#c23b3b' },
-  { label: '南西', cls: 'aspect-sw', color: '#8e4a9a' },
-  { label: '西',   cls: 'aspect-w',  color: '#4a6cbd' },
-  { label: '北西', cls: 'aspect-nw', color: '#5a9ab8' },
-];
-
-function aspectIndex(deg) {
-  if (deg == null || isNaN(deg)) return -1;
-  return Math.round(((deg % 360) + 360) % 360 / 45) % 8;
-}
-
-function styleByAspect(feature) {
-  const i = aspectIndex(feature.properties.aspect_deg);
-  const c = (i >= 0) ? ASPECT_DIRS[i].color : '#ccc';
-  return { color: '#555', fillColor: c, weight: 0.8, fillOpacity: 0.55 };
-}
-
-// === 7. 統合スタイル関数（フィルタ + モード） ===
 const HIDDEN_STYLE = { opacity: 0, fillOpacity: 0, weight: 0, interactive: false };
 
-function currentStyle(feature) {
-  // 地質モードでは畑ポリゴン自体は透明化（下の地質レイヤを見せる）
-  if (state.viewMode === 'geology') return HIDDEN_STYLE;
-  if (!state.hierarchyFilter[feature.properties.hierarchy]) return HIDDEN_STYLE;
-  let s;
-  switch (state.viewMode) {
-    case 'elevation': s = styleByElevation(feature); break;
-    case 'aspect':    s = styleByAspect(feature); break;
-    default:          s = styleByHierarchy(feature);
-  }
-  if (state.hillshadeOn) s = { ...s, fillOpacity: s.fillOpacity * HILLSHADE_FILL_FACTOR };
+const state = {
+  filter: { 'Grand Cru': true, 'Premier Cru': true, 'Régionale': true, 'Village': true, 'AOC': true },
+  hillshadeOn: false,
+};
+const HILLSHADE_FILL_FACTOR = 0.55;
+const hierarchyCounts = { 'Grand Cru': 0, 'Premier Cru': 0, 'Régionale': 0, 'Village': 0, 'AOC': 0 };
+
+function styleFor(feature) {
+  const h = feature.properties.hierarchy;
+  if (!state.filter[h]) return HIDDEN_STYLE;
+  const s = HIER_STYLE[h] || HIER_STYLE['AOC'];
+  if (state.hillshadeOn) return { ...s, fillOpacity: s.fillOpacity * HILLSHADE_FILL_FACTOR };
   return s;
 }
 
-// === 8. 方位ラベル変換（ポップアップ用） ===
-function aspectLabel(deg) {
-  if (deg == null || isNaN(deg)) return '—';
-  return `${ASPECT_DIRS[aspectIndex(deg)].label} (${Math.round(deg)}°)`;
-}
-
-// === 9. ポップアップ HTML ===
+// === 4. ポップアップ ===
 function popupHTML(props) {
-  const name = props.denom_ja || props.denom || '(unnamed)';
-  const hierMeta = HIER_STYLE[props.hierarchy] || DEFAULT_STYLE;
-  const elev = (props.elev_mean != null) ? `標高 ${Math.round(props.elev_mean)}m` : '';
-  const slope = (props.slope_mean != null) ? `斜度 ${props.slope_mean.toFixed(1)}°` : '';
-  const aspect = `方位 ${aspectLabel(props.aspect_deg)}`;
-
-  let html = `<h3 class="popup-title">${name}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>`;
-  html += `<div class="popup-section"><div class="popup-section-title">テロワール (GIS算出)</div>`;
-  html += `<div class="popup-terroir"><span>${elev}</span><span>${slope}</span><span>${aspect}</span></div></div>`;
-
-  if (props.name_origin_ja) {
-    html += `<div class="popup-section"><div class="popup-section-title">名前の由来</div>`;
-    html += `<p class="popup-text">${props.name_origin_ja}</p></div>`;
-  }
-  if (props.notes_ja) {
-    html += `<div class="popup-section"><div class="popup-section-title">畑の物語</div>`;
-    html += `<p class="popup-text">${props.notes_ja}</p></div>`;
-  }
-  return html;
-}
-
-// === 9.5 地質フィーチャ用ポップアップ（畑×地質の長テーブル 1 行分） ===
-function geologyPopupHTML(props) {
-  const denom = props.denom || '(unnamed)';
-  const geoLabel = props.geology_ja || props.notation || '—';
-  const age = props.age_ja ? `<div class="popup-text" style="color:#666;font-size:11px">${props.age_ja}</div>` : '';
-  const cov = (props.coverage != null)
-    ? `この畑の <strong>${(props.coverage * 100).toFixed(1)}%</strong> を占める`
+  const hierMeta = HIER_STYLE[props.hierarchy] || HIER_STYLE['AOC'];
+  const denomLine = (props.denom && props.denom !== props.app)
+    ? `<div class="popup-section"><span class="popup-section-title">climat: </span>${props.denom}</div>`
     : '';
-  const verified = props.verified && props.verified !== 'ok'
-    ? `<div class="popup-text" style="color:#b36;font-size:11px">※ ${props.verified}</div>`
-    : '';
-  return `<h3 class="popup-title">${denom}</h3>
+  return `<h3 class="popup-title">${props.app || '(unnamed)'}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
+    ${denomLine}
     <div class="popup-section">
-      <div class="popup-section-title">地質 (${props.notation || '?'})</div>
-      <p class="popup-text"><strong>${geoLabel}</strong></p>
-      ${age}
-      <p class="popup-text" style="font-size:12px;color:#555">${cov}</p>
-      ${verified}
+      <span class="popup-section-title">地方: </span>${props.dt || '—'}
+      &nbsp;&nbsp;<span class="popup-section-title">県: </span>${props.dept || '—'}
     </div>`;
 }
 
-// === 10. 凡例の描画（モード別） ===
-const legendTitle = document.getElementById('legend-title');
-const legendBody  = document.getElementById('legend-body');
-const legendHint  = document.getElementById('legend-hint');
+// === 5. 凡例 ===
+const legendBody = document.getElementById('legend-body');
+const legendHint = document.getElementById('legend-hint');
 
 function renderLegend() {
-  if (state.viewMode === 'hierarchy') {
-    legendTitle.textContent = '階層（クリックで表示切替）';
-    legendBody.innerHTML = Object.entries(HIER_STYLE).map(([key, s]) => {
-      const active = state.hierarchyFilter[key];
-      return `<div class="legend-row toggle${active ? '' : ' inactive'}" data-hier="${key}">
-        <span class="swatch ${s.cls}"></span>${s.label}
-      </div>`;
-    }).join('');
-    const allOff = Object.values(state.hierarchyFilter).every(v => !v);
-    legendHint.textContent = allOff ? 'すべて非表示中。凡例をクリックして階層を表示してください' : '';
-  } else if (state.viewMode === 'elevation') {
-    legendTitle.textContent = '標高（elev_mean）';
-    legendBody.innerHTML = ELEV_BUCKETS.map(b =>
-      `<div class="legend-row"><span class="swatch" style="background:${b.color}"></span>${b.label}</div>`
-    ).join('');
-    legendHint.textContent = 'RGE ALTI 5m DEM より算出';
-  } else if (state.viewMode === 'aspect') {
-    legendTitle.textContent = '方位（aspect_deg）';
-    legendBody.innerHTML = ASPECT_DIRS.map(d =>
-      `<div class="legend-row"><span class="swatch" style="background:${d.color}"></span>${d.label}</div>`
-    ).join('');
-    legendHint.textContent = '0°=北 時計回り。RGE ALTI 由来';
-  } else if (state.viewMode === 'geology') {
-    legendTitle.textContent = '地質（BRGM BD Charm-50）';
-    legendBody.innerHTML = GEOLOGY_CATEGORIES.map(c =>
-      `<div class="legend-row"><span class="swatch" style="background:${c.color}"></span>${c.label}</div>`
-    ).join('');
-    legendHint.textContent = '畑×地質の Spatial Join。クリックで地質ポップアップ';
-  }
+  legendBody.innerHTML = Object.entries(HIER_STYLE).map(([key, s]) => {
+    const active = state.filter[key];
+    const count = hierarchyCounts[key];
+    return `<div class="legend-row${active ? '' : ' inactive'}" data-hier="${key}">
+      <span class="swatch ${s.cls}"></span>${s.label}
+      <span class="legend-count">${count.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+  const allOff = Object.values(state.filter).every(v => !v);
+  legendHint.textContent = allOff ? 'すべて非表示中。凡例をクリックして階層を表示してください' : '';
 }
 
-// === 11. GeoJSON 読み込み + 描画（畑 + 地質を並列fetch） ===
-let geojsonLayer = null;
-let geologyLayer = null;
-let initialBounds = null;
+// === 6. データ読込 + レイヤ構築 ===
+let detailLayer = null;
+let searchIndex = [];
 const spinner = document.getElementById('loading-spinner');
 
-function fetchJson(path, required) {
+function fetchJson(path) {
   return fetch(path).then(res => {
-    if (!res.ok) {
-      if (required) throw new Error(`${path} 読込失敗: ${res.status}`);
-      console.warn(`${path} 読込失敗 (${res.status}) — skip`);
-      return null;
-    }
+    if (!res.ok) throw new Error(`${path} 読込失敗: ${res.status}`);
     return res.json();
-  }).catch(err => {
-    if (required) throw err;
-    console.warn(`${path} 読込スキップ:`, err);
-    return null;
   });
+}
+
+function bindFeature(feature, lyr) {
+  lyr.bindPopup(popupHTML(feature.properties), { maxWidth: 340 });
+  lyr.on('mouseover', () => {
+    if (state.filter[feature.properties.hierarchy]) lyr.setStyle({ weight: 2.5 });
+  });
+  lyr.on('mouseout', () => lyr.setStyle(styleFor(feature)));
 }
 
 Promise.all([
-  fetchJson('data/france/bourgogne/corton_terroir.geojson', true),
-  fetchJson('data/france/bourgogne/corton_geology.geojson', false),
-]).then(([parcelsGeo, geologyGeo]) => {
-  // id_denom → hierarchy 対応表を構築（地質レイヤの階層フィルタ連動に使用）
-  parcelsGeo.features.forEach(f => {
-    hierarchyByIdDenom[f.properties.id_denom] = f.properties.hierarchy;
-  });
-
-  // 畑レイヤ
-  geojsonLayer = L.geoJSON(parcelsGeo, {
-    style: currentStyle,
-    onEachFeature: (feature, lyr) => {
-      lyr.bindPopup(popupHTML(feature.properties), { maxWidth: 340 });
-      lyr.on('mouseover', () => {
-        if (state.viewMode !== 'geology' && state.hierarchyFilter[feature.properties.hierarchy]) {
-          lyr.setStyle({ weight: 2.5 });
-        }
-      });
-      lyr.on('mouseout', () => {
-        lyr.setStyle(currentStyle(feature));
-      });
-    }
-  }).addTo(map);
-
-  initialBounds = geojsonLayer.getBounds();
-  map.fitBounds(initialBounds, { padding: [20, 20] });
-  console.log(`畑 GeoJSON 読込完了: ${parcelsGeo.features.length} features`);
-
-  // 地質レイヤ（読込成功時のみ構築、初期は map に追加しない）
-  if (geologyGeo) {
-    geologyLayer = L.geoJSON(geologyGeo, {
-      pane: 'geology',
-      style: styleByGeology,
-      onEachFeature: (feature, lyr) => {
-        lyr.bindPopup(geologyPopupHTML(feature.properties), { maxWidth: 300 });
-      }
-    });
-    console.log(`地質 GeoJSON 読込完了: ${geologyGeo.features.length} features`);
+  fetchJson('data/france/inao_france_detail.geojson'),
+  fetchJson('data/france/search-index.json'),
+]).then(([detailGeo, idx]) => {
+  // 凡例カウントは search-index の denom 単位件数（検索結果数の感覚）
+  for (const e of idx) {
+    if (e.hierarchy in hierarchyCounts) hierarchyCounts[e.hierarchy]++;
   }
 
-  applyMode();
+  detailLayer = L.geoJSON(detailGeo, {
+    style: styleFor,
+    onEachFeature: bindFeature,
+  }).addTo(map);
+
+  searchIndex = idx;
+
+  console.log(`detail: ${detailGeo.features.length} features, search index: ${idx.length} entries`);
+
   renderLegend();
   spinner.classList.remove('visible');
 }).catch(err => {
   console.error(err);
   spinner.classList.remove('visible');
-  alert(`GeoJSON 読込エラー: ${err.message}`);
+  alert(`データ読込エラー: ${err.message}\nブラウザの開発者ツール（Console）を確認してください。`);
 });
 
-// === 12. スタイル再適用 + モード切替（畑/地質レイヤの入替） ===
-function applyMode() {
-  if (!geojsonLayer) return;
-  if (state.viewMode === 'geology') {
-    if (geologyLayer && !map.hasLayer(geologyLayer)) geologyLayer.addTo(map);
-  } else {
-    if (geologyLayer && map.hasLayer(geologyLayer)) map.removeLayer(geologyLayer);
-  }
-}
-
+// === 7. 階層フィルタ（凡例クリック） ===
 function restyleAll() {
-  if (geojsonLayer) {
-    geojsonLayer.eachLayer(lyr => lyr.setStyle(currentStyle(lyr.feature)));
-  }
-  if (geologyLayer && map.hasLayer(geologyLayer)) {
-    geologyLayer.eachLayer(lyr => lyr.setStyle(styleByGeology(lyr.feature)));
-  }
+  if (detailLayer) detailLayer.eachLayer(lyr => lyr.setStyle(styleFor(lyr.feature)));
 }
-
-// === 13. UI イベント ===
-document.querySelectorAll('input[name="view"]').forEach(radio => {
-  radio.addEventListener('change', e => {
-    state.viewMode = e.target.value;
-    applyMode();
-    restyleAll();
-    renderLegend();
-  });
-});
 
 legendBody.addEventListener('click', e => {
-  const row = e.target.closest('.legend-row.toggle');
+  const row = e.target.closest('.legend-row');
   if (!row) return;
   const key = row.dataset.hier;
-  state.hierarchyFilter[key] = !state.hierarchyFilter[key];
+  state.filter[key] = !state.filter[key];
   restyleAll();
   renderLegend();
 });
 
-// 陰影起伏 overlay の ON/OFF に連動して畑の塗りを調整
+// === 8. 陰影起伏 overlay 連動 ===
 map.on('overlayadd', e => {
   if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = true; restyleAll(); }
 });
@@ -390,13 +200,109 @@ map.on('overlayremove', e => {
   if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = false; restyleAll(); }
 });
 
-// リセット: 初期ビュー + 階層フィルタ全ON + 階層モードに戻す
-document.getElementById('reset-btn').addEventListener('click', () => {
-  state.viewMode = 'hierarchy';
-  state.hierarchyFilter = { 'Grand Cru': true, 'Premier Cru': true, 'Village': true };
-  document.querySelector('input[name="view"][value="hierarchy"]').checked = true;
-  if (initialBounds) map.fitBounds(initialBounds, { padding: [20, 20] });
-  applyMode();
-  restyleAll();
-  renderLegend();
+// === 9. 検索バー ===
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+function normalizeStr(s) {
+  // 大文字小文字 + アクセント記号を除去して比較
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function searchEntries(query, max = 20) {
+  const q = normalizeStr(query);
+  if (q.length < 2) return [];
+  const results = [];
+  for (const e of searchIndex) {
+    const appN = normalizeStr(e.app);
+    const denomN = normalizeStr(e.denom);
+    if (appN.includes(q) || denomN.includes(q)) {
+      // ランキング: 完全一致 > 先頭一致 > 含有一致、hierarchy 重要度も考慮
+      let score = 0;
+      if (appN === q || denomN === q) score = 100;
+      else if (appN.startsWith(q) || denomN.startsWith(q)) score = 50;
+      else score = 10;
+      const hOrder = { 'Grand Cru': 4, 'Premier Cru': 3, 'Régionale': 2, 'Village': 1, 'AOC': 0 };
+      score += (hOrder[e.hierarchy] || 0);
+      results.push({ entry: e, score });
+    }
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, max).map(r => r.entry);
+}
+
+function renderSearchResults(entries) {
+  if (!entries.length) {
+    searchResults.classList.remove('visible');
+    searchResults.innerHTML = '';
+    return;
+  }
+  searchResults.innerHTML = entries.map((e, i) => {
+    const hierMeta = HIER_STYLE[e.hierarchy] || HIER_STYLE['AOC'];
+    const climat = (e.denom !== e.app) ? `<span class="sr-meta">→ ${e.denom}</span>` : '';
+    return `<li data-idx="${i}">
+      <span class="sr-hier ${hierMeta.cls}">${hierMeta.label}</span>
+      <span class="sr-name">${e.app}</span>
+      ${climat}
+      <span class="sr-meta">${e.dt || ''}</span>
+    </li>`;
+  }).join('');
+  searchResults.classList.add('visible');
+  searchResults._entries = entries;
+}
+
+let searchDebounce = null;
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    renderSearchResults(searchEntries(searchInput.value));
+  }, 80);
 });
+
+searchResults.addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  const idx = parseInt(li.dataset.idx, 10);
+  const entry = searchResults._entries[idx];
+  if (!entry) return;
+  flyToEntry(entry);
+});
+
+// 入力欄外クリックで結果を閉じる
+document.addEventListener('click', e => {
+  if (!e.target.closest('#search-box')) {
+    searchResults.classList.remove('visible');
+  }
+});
+
+// 検索結果クリック時に表示するアクティブマーカー（centroid 表示で「ここが検索した AOC」を可視化）
+let activeMarker = null;
+
+function flyToEntry(entry) {
+  // hierarchy が detail 系なら zoom 13、overview 系なら zoom 9 程度
+  const isDetail = ['Grand Cru', 'Premier Cru', 'Village'].includes(entry.hierarchy);
+  const targetZoom = isDetail ? 13 : 9;
+  map.flyTo([entry.lat, entry.lng], targetZoom, { duration: 0.9 });
+  searchResults.classList.remove('visible');
+  searchInput.value = `${entry.app}${entry.denom !== entry.app ? ' / ' + entry.denom : ''}`;
+
+  // centroid に marker を置く（AOC 階層は detail layer に乗らないため、視覚的なアンカーとして必要）
+  if (activeMarker) map.removeLayer(activeMarker);
+  const hierMeta = HIER_STYLE[entry.hierarchy] || HIER_STYLE['AOC'];
+  activeMarker = L.circleMarker([entry.lat, entry.lng], {
+    radius: 9,
+    color: '#fff',
+    weight: 2,
+    fillColor: hierMeta.fillColor,
+    fillOpacity: 0.9,
+  }).addTo(map);
+  const denomLine = (entry.denom !== entry.app)
+    ? `<div class="popup-section"><span class="popup-section-title">climat: </span>${entry.denom}</div>`
+    : '';
+  activeMarker.bindPopup(`<h3 class="popup-title">${entry.app}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
+    ${denomLine}
+    <div class="popup-section">
+      <span class="popup-section-title">地方: </span>${entry.dt || '—'}
+      &nbsp;&nbsp;<span class="popup-section-title">県: </span>${entry.dept || '—'}
+    </div>`, { maxWidth: 320 }).openPopup();
+}

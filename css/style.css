@@ -1,4 +1,4 @@
-/* コルトン丘テロワールマップ Phase 5 S3: レイヤ切替・フィルタ */
+/* WineMap Phase 2 全仏 AOC テロワールマップ */
 
 html, body {
   margin: 0;
@@ -14,75 +14,119 @@ html, body {
   left: 0;
   right: 0;
   z-index: 1000;
-  padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.92);
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid #ddd;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 #header h1 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
+  color: #5a0000;
+  letter-spacing: 0.5px;
 }
 #header .subtitle {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #666;
+  font-size: 11px;
+  color: #888;
+}
+
+/* 検索ボックス */
+#search-box {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+  min-width: 220px;
+}
+#search-input {
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+#search-input:focus {
+  border-color: #5a0000;
+  box-shadow: 0 0 0 2px rgba(90, 0, 0, 0.15);
+}
+#search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 1100;
+  display: none;
+}
+#search-results.visible { display: block; }
+#search-results li {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#search-results li:last-child { border-bottom: none; }
+#search-results li:hover, #search-results li.active {
+  background: #f4e8e8;
+}
+#search-results .sr-hier {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: #fff;
+  border-radius: 2px;
+  flex-shrink: 0;
+  min-width: 50px;
+  text-align: center;
+}
+#search-results .sr-hier.grand-cru   { background: #5a0000; }
+#search-results .sr-hier.premier-cru { background: #a04040; }
+#search-results .sr-hier.regionale   { background: #4a6cbd; }
+#search-results .sr-hier.village     { background: #7fa3d4; }
+#search-results .sr-hier.aoc         { background: #888; }
+#search-results .sr-meta {
+  font-size: 11px;
+  color: #888;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+#search-results .sr-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #map {
   position: absolute;
-  top: 60px;     /* ヘッダ分の下げ */
+  top: 56px;
   bottom: 0;
   left: 0;
   right: 0;
-}
-
-/* 表示モード切替パネル */
-#view-control {
-  position: absolute;
-  top: 70px;
-  right: 20px;
-  z-index: 1000;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 12px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-#view-control .vc-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-#view-control label {
-  display: block;
-  margin: 2px 0;
-  cursor: pointer;
-}
-#view-control input[type="radio"] {
-  margin-right: 4px;
-  vertical-align: middle;
-}
-#view-control #reset-btn {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-family: inherit;
-  color: #333;
-  background: #f5f5f5;
-  border: 1px solid #bbb;
-  border-radius: 3px;
-  cursor: pointer;
-}
-#view-control #reset-btn:hover {
-  background: #e8e8e8;
-  border-color: #888;
-}
-#view-control #reset-btn:active {
-  background: #dcdcdc;
 }
 
 /* 凡例 */
@@ -97,7 +141,7 @@ html, body {
   border-radius: 4px;
   font-size: 12px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  min-width: 140px;
+  min-width: 160px;
 }
 #legend .legend-title {
   font-weight: 600;
@@ -107,21 +151,12 @@ html, body {
   display: flex;
   align-items: center;
   margin: 3px 0;
-}
-#legend .legend-row.toggle {
   cursor: pointer;
   user-select: none;
 }
-#legend .legend-row.toggle:hover {
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 2px;
-}
-#legend .legend-row.inactive {
-  opacity: 0.35;
-}
-#legend .legend-row.inactive .swatch {
-  filter: grayscale(1);
-}
+#legend .legend-row:hover { background: rgba(0, 0, 0, 0.04); border-radius: 2px; }
+#legend .legend-row.inactive { opacity: 0.35; }
+#legend .legend-row.inactive .swatch { filter: grayscale(1); }
 #legend .swatch {
   display: inline-block;
   width: 16px;
@@ -132,7 +167,9 @@ html, body {
 }
 #legend .swatch.grand-cru   { background: #8b0000; }
 #legend .swatch.premier-cru { background: #c45a5a; }
-#legend .swatch.village     { background: #dfa0a0; }
+#legend .swatch.regionale   { background: #4a6cbd; }
+#legend .swatch.village     { background: #87b1de; }
+#legend .swatch.aoc         { background: #b0b0b0; }
 #legend .legend-hint {
   margin-top: 6px;
   font-size: 10px;
@@ -140,16 +177,21 @@ html, body {
   font-style: italic;
 }
 #legend .legend-hint:empty { display: none; }
+#legend .legend-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: #888;
+}
 
 /* 背景地図切替コントロール（Leaflet 標準） */
 .leaflet-control-layers {
   font-size: 12px;
 }
 
-/* ロード中スピナー（初回 GeoJSON 読込中の overlay） */
+/* ロード中スピナー */
 #loading-spinner {
   position: absolute;
-  top: 60px;
+  top: 56px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -162,9 +204,7 @@ html, body {
   background: rgba(255, 255, 255, 0.65);
   pointer-events: none;
 }
-#loading-spinner.visible {
-  display: flex;
-}
+#loading-spinner.visible { display: flex; }
 #loading-spinner .spinner-ring {
   width: 36px;
   height: 36px;
@@ -205,27 +245,25 @@ html, body {
 }
 .popup-hier.grand-cru   { background: #8b0000; }
 .popup-hier.premier-cru { background: #c45a5a; }
-.popup-hier.village     { background: #a8a8a8; }
-.popup-section {
-  margin-top: 8px;
-}
+.popup-hier.regionale   { background: #4a6cbd; }
+.popup-hier.village     { background: #87b1de; }
+.popup-hier.aoc         { background: #888; }
+.popup-section { margin-top: 6px; font-size: 12px; color: #444; }
 .popup-section-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: #888;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
-.popup-terroir {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-  color: #444;
-}
-.popup-terroir span {
-  white-space: nowrap;
-}
-.popup-text {
-  font-size: 12px;
-  color: #333;
-  margin: 0;
+
+/* モバイル */
+@media (max-width: 600px) {
+  #header { padding: 6px 10px; gap: 8px; }
+  .header-row { flex: 1 1 100%; }
+  #header h1 { font-size: 17px; }
+  #header .subtitle { display: none; }
+  #search-box { max-width: 100%; flex: 1 1 100%; }
+  #map { top: 92px; }
+  #loading-spinner { top: 92px; }
+  #legend { bottom: 10px; right: 10px; min-width: 140px; padding: 8px 10px; }
 }
