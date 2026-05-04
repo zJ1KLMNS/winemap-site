@@ -295,8 +295,8 @@ function fetchJson(path, required) {
 }
 
 Promise.all([
-  fetchJson('data/bourgogne/corton_terroir.geojson', true),
-  fetchJson('data/bourgogne/corton_geology.geojson', false),
+  fetchJson('data/france/bourgogne/corton_terroir.geojson', true),
+  fetchJson('data/france/bourgogne/corton_geology.geojson', false),
 ]).then(([parcelsGeo, geologyGeo]) => {
   // id_denom → hierarchy 対応表を構築（地質レイヤの階層フィルタ連動に使用）
   parcelsGeo.features.forEach(f => {
