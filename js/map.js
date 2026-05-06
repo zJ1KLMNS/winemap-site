@@ -241,6 +241,57 @@ map.on('overlayremove', e => {
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
 
+// 「最近見た畑」履歴（localStorage、最大 10 件）
+const RECENT_KEY = 'winemap.recent.denoms';
+const RECENT_MAX = 10;
+
+function getRecentDenoms() {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecentDenom(denom) {
+  if (!denom) return;
+  const list = getRecentDenoms().filter(d => d !== denom);
+  list.unshift(denom);
+  list.splice(RECENT_MAX);
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+function getRecentEntries() {
+  return getRecentDenoms()
+    .map(d => searchIndex.find(e => e.denom === d))
+    .filter(Boolean);
+}
+
+function renderRecentResults() {
+  const entries = getRecentEntries();
+  if (!entries.length) {
+    searchResults.classList.remove('visible');
+    searchResults.innerHTML = '';
+    return;
+  }
+  const items = entries.map((e, i) => {
+    const hierMeta = HIER_STYLE[e.hierarchy] || HIER_STYLE['AOC'];
+    const climat = (e.denom !== e.app) ? `<span class="sr-meta">→ ${e.denom}</span>` : '';
+    return `<li data-idx="${i}">
+      <span class="sr-hier ${hierMeta.cls}">${hierMeta.label}</span>
+      <span class="sr-name">${e.app}</span>
+      ${climat}
+      <span class="sr-meta">${e.dt || ''}</span>
+    </li>`;
+  }).join('');
+  searchResults.innerHTML = `<li class="sr-section">最近見た畑</li>${items}`;
+  searchResults.classList.add('visible');
+  searchResults._entries = entries;
+}
+
 function normalizeStr(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -290,12 +341,21 @@ let searchDebounce = null;
 searchInput.addEventListener('input', () => {
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
-    renderSearchResults(searchEntries(searchInput.value));
+    const q = searchInput.value.trim();
+    if (q.length < 2) {
+      renderRecentResults();
+    } else {
+      renderSearchResults(searchEntries(q));
+    }
   }, 80);
 });
 
+searchInput.addEventListener('focus', () => {
+  if (searchInput.value.trim().length < 2) renderRecentResults();
+});
+
 searchResults.addEventListener('click', e => {
-  const li = e.target.closest('li');
+  const li = e.target.closest('li[data-idx]');
   if (!li) return;
   const idx = parseInt(li.dataset.idx, 10);
   const entry = searchResults._entries[idx];
@@ -345,6 +405,7 @@ async function flyToEntry(entry) {
     activeMarker.bindPopup(infoHtml, { maxWidth: 320 }).openPopup();
   }
 
+  pushRecentDenom(entry.denom);
   updateUrl(entry);
 }
 

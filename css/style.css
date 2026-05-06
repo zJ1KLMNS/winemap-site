@@ -93,6 +93,16 @@ html, body {
 #search-results li:hover, #search-results li.active {
   background: #f4e8e8;
 }
+#search-results li.sr-section {
+  padding: 4px 12px;
+  font-size: 10px;
+  color: #888;
+  font-weight: 600;
+  background: #f7f7f7;
+  cursor: default;
+  letter-spacing: 0.5px;
+}
+#search-results li.sr-section:hover { background: #f7f7f7; }
 #search-results .sr-hier {
   display: inline-block;
   padding: 1px 6px;
