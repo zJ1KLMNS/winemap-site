@@ -118,8 +118,18 @@ function popupHTML(props) {
 }
 
 // === 5. 凡例 ===
+const legend = document.getElementById('legend');
 const legendBody = document.getElementById('legend-body');
 const legendHint = document.getElementById('legend-hint');
+const legendTitle = document.getElementById('legend-title');
+const legendToggle = document.getElementById('legend-toggle');
+
+// モバイルではデフォルト折りたたみ。タイトルタップで展開/縮小
+if (window.matchMedia('(max-width: 600px)').matches) legend.classList.add('collapsed');
+legendTitle.addEventListener('click', () => {
+  legend.classList.toggle('collapsed');
+  legendToggle.textContent = legend.classList.contains('collapsed') ? '▼' : '▲';
+});
 
 function renderLegend() {
   legendBody.innerHTML = Object.entries(HIER_STYLE).map(([key, s]) => {
