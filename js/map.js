@@ -95,12 +95,21 @@ function styleFor(feature) {
 }
 
 // === 4. ポップアップ ===
+// app → app_ja の逆引きマップ（search-index ロード時に構築、popup 表示で参照）
+const appJaMap = new Map();
+
+function titleHTML(app, hierMeta) {
+  const ja = appJaMap.get(app);
+  const jaLine = ja ? `<span class="popup-title-ja">${ja}</span>` : '';
+  return `<h3 class="popup-title">${app || '(unnamed)'}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span>${jaLine}</h3>`;
+}
+
 function popupHTML(props) {
   const hierMeta = HIER_STYLE[props.hierarchy] || HIER_STYLE['AOC'];
   const denomLine = (props.denom && props.denom !== props.app)
     ? `<div class="popup-section"><span class="popup-section-title">climat: </span>${props.denom}</div>`
     : '';
-  return `<h3 class="popup-title">${props.app || '(unnamed)'}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
+  return `${titleHTML(props.app, hierMeta)}
     ${denomLine}
     <div class="popup-section">
       <span class="popup-section-title">地方: </span>${props.dt || '—'}
@@ -202,10 +211,11 @@ fetchJson('data/france/search-index.json').then(idx => {
   searchIndex = idx;
   for (const e of idx) {
     if (e.hierarchy in hierarchyCounts) hierarchyCounts[e.hierarchy]++;
+    if (e.app_ja && !appJaMap.has(e.app)) appJaMap.set(e.app, e.app_ja);
   }
   renderLegend();
   spinner.classList.remove('visible');
-  console.log(`search index: ${idx.length} entries`);
+  console.log(`search index: ${idx.length} entries (${appJaMap.size} app_ja)`);
   restoreFromUrl();
 }).catch(err => {
   console.error(err);
@@ -270,6 +280,18 @@ function getRecentEntries() {
     .filter(Boolean);
 }
 
+function srItemHTML(e, i) {
+  const hierMeta = HIER_STYLE[e.hierarchy] || HIER_STYLE['AOC'];
+  const ja = e.app_ja ? `<span class="sr-name-ja">${e.app_ja}</span>` : '';
+  const climat = (e.denom !== e.app) ? `<span class="sr-meta">→ ${e.denom}</span>` : '';
+  return `<li data-idx="${i}">
+    <span class="sr-hier ${hierMeta.cls}">${hierMeta.label}</span>
+    <span class="sr-name">${e.app}</span>${ja}
+    ${climat}
+    <span class="sr-meta">${e.dt || ''}</span>
+  </li>`;
+}
+
 function renderRecentResults() {
   const entries = getRecentEntries();
   if (!entries.length) {
@@ -277,16 +299,7 @@ function renderRecentResults() {
     searchResults.innerHTML = '';
     return;
   }
-  const items = entries.map((e, i) => {
-    const hierMeta = HIER_STYLE[e.hierarchy] || HIER_STYLE['AOC'];
-    const climat = (e.denom !== e.app) ? `<span class="sr-meta">→ ${e.denom}</span>` : '';
-    return `<li data-idx="${i}">
-      <span class="sr-hier ${hierMeta.cls}">${hierMeta.label}</span>
-      <span class="sr-name">${e.app}</span>
-      ${climat}
-      <span class="sr-meta">${e.dt || ''}</span>
-    </li>`;
-  }).join('');
+  const items = entries.map((e, i) => srItemHTML(e, i)).join('');
   searchResults.innerHTML = `<li class="sr-section">最近見た畑</li>${items}`;
   searchResults.classList.add('visible');
   searchResults._entries = entries;
@@ -303,10 +316,11 @@ function searchEntries(query, max = 20) {
   for (const e of searchIndex) {
     const appN = normalizeStr(e.app);
     const denomN = normalizeStr(e.denom);
-    if (appN.includes(q) || denomN.includes(q)) {
+    const jaN = e.app_ja ? normalizeStr(e.app_ja) : '';
+    if (appN.includes(q) || denomN.includes(q) || (jaN && jaN.includes(q))) {
       let score = 0;
-      if (appN === q || denomN === q) score = 100;
-      else if (appN.startsWith(q) || denomN.startsWith(q)) score = 50;
+      if (appN === q || denomN === q || jaN === q) score = 100;
+      else if (appN.startsWith(q) || denomN.startsWith(q) || (jaN && jaN.startsWith(q))) score = 50;
       else score = 10;
       const hOrder = { 'Grand Cru': 4, 'Premier Cru': 3, 'Village': 2, 'Régionale': 1, 'AOC': 0 };
       score += (hOrder[e.hierarchy] || 0);
@@ -323,16 +337,7 @@ function renderSearchResults(entries) {
     searchResults.innerHTML = '';
     return;
   }
-  searchResults.innerHTML = entries.map((e, i) => {
-    const hierMeta = HIER_STYLE[e.hierarchy] || HIER_STYLE['AOC'];
-    const climat = (e.denom !== e.app) ? `<span class="sr-meta">→ ${e.denom}</span>` : '';
-    return `<li data-idx="${i}">
-      <span class="sr-hier ${hierMeta.cls}">${hierMeta.label}</span>
-      <span class="sr-name">${e.app}</span>
-      ${climat}
-      <span class="sr-meta">${e.dt || ''}</span>
-    </li>`;
-  }).join('');
+  searchResults.innerHTML = entries.map((e, i) => srItemHTML(e, i)).join('');
   searchResults.classList.add('visible');
   searchResults._entries = entries;
 }
@@ -393,7 +398,7 @@ async function flyToEntry(entry) {
   const denomLine = (entry.denom !== entry.app)
     ? `<div class="popup-section"><span class="popup-section-title">climat: </span>${entry.denom}</div>`
     : '';
-  const infoHtml = `<h3 class="popup-title">${entry.app}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
+  const infoHtml = `${titleHTML(entry.app, hierMeta)}
     ${denomLine}
     <div class="popup-section">
       <span class="popup-section-title">地方: </span>${entry.dt || '—'}

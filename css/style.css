@@ -129,6 +129,13 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 60px;
+}
+#search-results .sr-name-ja {
+  font-size: 11px;
+  color: #666;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 #map {
@@ -252,6 +259,14 @@ html, body {
   color: #fff;
   border-radius: 2px;
   vertical-align: middle;
+}
+.popup-title-ja {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: normal;
+  color: #888;
+  letter-spacing: 0.3px;
 }
 .popup-hier.grand-cru   { background: #8b0000; }
 .popup-hier.premier-cru { background: #c45a5a; }
