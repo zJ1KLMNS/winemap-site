@@ -140,7 +140,15 @@ function fetchJson(path) {
 }
 
 function bindFeature(feature, lyr) {
-  lyr.bindPopup(popupHTML(feature.properties), { maxWidth: 340 });
+  lyr.on('click', e => {
+    L.DomEvent.stopPropagation(e);
+    const html = popupHTML(feature.properties);
+    if (isMobile()) {
+      showBottomSheet(html);
+    } else {
+      lyr.bindPopup(html, { maxWidth: 340 }).openPopup();
+    }
+  });
   lyr.on('mouseover', () => {
     if (state.filter[feature.properties.hierarchy]) lyr.setStyle({ weight: 2.5 });
   });
@@ -325,12 +333,17 @@ async function flyToEntry(entry) {
   const denomLine = (entry.denom !== entry.app)
     ? `<div class="popup-section"><span class="popup-section-title">climat: </span>${entry.denom}</div>`
     : '';
-  activeMarker.bindPopup(`<h3 class="popup-title">${entry.app}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
+  const infoHtml = `<h3 class="popup-title">${entry.app}<span class="popup-hier ${hierMeta.cls}">${hierMeta.label}</span></h3>
     ${denomLine}
     <div class="popup-section">
       <span class="popup-section-title">地方: </span>${entry.dt || '—'}
       &nbsp;&nbsp;<span class="popup-section-title">県: </span>${entry.dept || '—'}
-    </div>`, { maxWidth: 320 }).openPopup();
+    </div>`;
+  if (isMobile()) {
+    showBottomSheet(infoHtml);
+  } else {
+    activeMarker.bindPopup(infoHtml, { maxWidth: 320 }).openPopup();
+  }
 
   updateUrl(entry);
 }
@@ -349,3 +362,40 @@ function restoreFromUrl() {
   const entry = searchIndex.find(e => e.denom === denom);
   if (entry) flyToEntry(entry);
 }
+
+// === 13. ボトムシート（モバイル）===
+const bottomSheet = document.getElementById('bottom-sheet');
+const bottomSheetContent = document.getElementById('bottom-sheet-content');
+const bottomSheetHandle = document.getElementById('bottom-sheet-handle');
+const isMobile = () => window.matchMedia('(max-width: 600px)').matches;
+
+function showBottomSheet(html) {
+  bottomSheetContent.innerHTML = html;
+  bottomSheet.classList.add('shown');
+  bottomSheet.setAttribute('aria-hidden', 'false');
+}
+
+function hideBottomSheet() {
+  bottomSheet.classList.remove('shown');
+  bottomSheet.setAttribute('aria-hidden', 'true');
+}
+
+bottomSheetHandle.addEventListener('click', hideBottomSheet);
+
+// 下スワイプで閉じる（内部スクロール先頭にいるときのみ）
+let bsTouchStartY = null;
+bottomSheet.addEventListener('touchstart', e => {
+  bsTouchStartY = e.touches[0].clientY;
+}, { passive: true });
+bottomSheet.addEventListener('touchmove', e => {
+  if (bsTouchStartY === null) return;
+  const dy = e.touches[0].clientY - bsTouchStartY;
+  if (dy > 60 && bottomSheet.scrollTop === 0) {
+    hideBottomSheet();
+    bsTouchStartY = null;
+  }
+}, { passive: true });
+bottomSheet.addEventListener('touchend', () => { bsTouchStartY = null; }, { passive: true });
+
+// 地図クリック（ポリゴン外）で閉じる
+map.on('click', () => hideBottomSheet());

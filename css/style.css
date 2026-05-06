@@ -256,7 +256,9 @@ html, body {
   margin-bottom: 1px;
 }
 
-/* モバイル */
+/* ボトムシート（モバイルのみ表示） */
+#bottom-sheet { display: none; }
+
 @media (max-width: 600px) {
   #header { padding: 6px 10px; gap: 8px; }
   .header-row { flex: 1 1 100%; }
@@ -266,4 +268,39 @@ html, body {
   #map { top: 92px; }
   #loading-spinner { top: 92px; }
   #legend { bottom: 10px; right: 10px; min-width: 140px; padding: 8px 10px; }
+
+  #bottom-sheet {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    background: #fff;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+    transform: translateY(105%);
+    transition: transform 0.25s ease-out;
+    max-height: 50vh;
+    padding: 6px 16px 24px;
+    overflow-y: auto;
+    touch-action: pan-y;
+  }
+  #bottom-sheet.shown { transform: translateY(0); }
+  #bottom-sheet[aria-hidden="true"] { pointer-events: none; }
+  #bottom-sheet.shown[aria-hidden="false"] { pointer-events: auto; }
+  #bottom-sheet-handle {
+    width: 40px;
+    height: 4px;
+    background: #ccc;
+    border-radius: 2px;
+    margin: 6px auto 10px;
+    cursor: grab;
+  }
+  #bottom-sheet-content { font-size: 13px; line-height: 1.55; color: #222; }
+  #bottom-sheet-content .popup-title {
+    font-size: 15px;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+  }
 }
