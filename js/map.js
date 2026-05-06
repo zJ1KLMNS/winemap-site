@@ -1,28 +1,20 @@
 /**
- * WineMap Phase 2 — 仏ワイン AOC 全土テロワールマップ（Champagne 除く）
+ * WineMap Phase 2 ステップ 5 — SPA + オンデマンドロード版
  *
- * 機能:
- *   - 背景地図切替（OSM / IGN BDORTHO / IGN Plan V2 / OpenTopoMap）
- *   - 陰影起伏 overlay（IGN ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW、最大 z15）
- *   - 5 階層カラーリング: Grand Cru / Premier Cru / Régionale / Village / AOC
- *   - 階層フィルタ（凡例クリックで表示切替）
- *   - 検索バー: 1,277 denom を fuzzy match、結果クリックで該当 AOC へ fly
- *   - ポップアップ: app / denom / hierarchy / dt / dept
+ * 起動時は仏全土の地図 + 検索バー（+ 約 220 KB の search-index.json）のみ。
+ * 検索クリック時に該当 region GeoJSON（data/france/regions/<slug>.geojson）を
+ * オンデマンドで fetch → flyTo + 描画。
+ * URL `?denom=xxx` でリンク共有可、リロードで状態復元。
  *
  * データ:
- *   - data/france/inao_france_detail.geojson: GC/PC/Village 1,003 features（denom 単位、約 1 MB）
- *   - data/france/search-index.json:          1,277 denom のメタデータ + WGS84 centroid
+ *   - data/france/search-index.json:    1,277 denom × WGS84 centroid + region slug
+ *   - data/france/regions/<slug>.geojson: dt 14 区分の地域別ポリゴン（C+ 案）
  *
- * 注: Régionale/AOC（Bordeaux 全体・Loire 全体等）の広域ポリゴン表示は
- *     ファイルサイズが配信不可（dissolve + tolerance 500m でも 33 MB）のため、
- *     現状は検索インデックス経由でのみ到達可能（fly to centroid）。
- *     ベクトルタイル化で解決予定（Phase 2 ステップ 5+）。
- *
- * スコープ注: INAO delim-parcellaire 対象 355 AOC。Champagne・Coteaux Champenois・
- *             Rosé des Riceys は元データに未収録のため白地表示（Phase 2.5 で別ソース調査予定）。
+ * スコープ注: INAO delim-parcellaire 対象 355 AOC（Champagne 除く）。
+ *             Phase 2.5 で Champagne 補完予定。
  */
 
-// === 1. 地図初期化（仏全土を表示） ===
+// === 1. 地図初期化（仏全土） ===
 const FRANCE_BOUNDS = L.latLngBounds([41.0, -5.5], [51.5, 10.5]);
 const map = L.map('map', {
   zoomControl: true,
@@ -89,6 +81,7 @@ const HIDDEN_STYLE = { opacity: 0, fillOpacity: 0, weight: 0, interactive: false
 const state = {
   filter: { 'Grand Cru': true, 'Premier Cru': true, 'Régionale': true, 'Village': true, 'AOC': true },
   hillshadeOn: false,
+  currentRegion: null,
 };
 const HILLSHADE_FILL_FACTOR = 0.55;
 const hierarchyCounts = { 'Grand Cru': 0, 'Premier Cru': 0, 'Régionale': 0, 'Village': 0, 'AOC': 0 };
@@ -132,10 +125,12 @@ function renderLegend() {
   legendHint.textContent = allOff ? 'すべて非表示中。凡例をクリックして階層を表示してください' : '';
 }
 
-// === 6. データ読込 + レイヤ構築 ===
-let detailLayer = null;
+// === 6. オンデマンドロード ===
+const regionCache = new Map();   // slug -> GeoJSON object（重複 fetch 防止）
+const regionLayers = new Map();  // slug -> L.GeoJSON layer
 let searchIndex = [];
 const spinner = document.getElementById('loading-spinner');
+const spinnerText = spinner.querySelector('.spinner-text');
 
 function fetchJson(path) {
   return fetch(path).then(res => {
@@ -152,35 +147,57 @@ function bindFeature(feature, lyr) {
   lyr.on('mouseout', () => lyr.setStyle(styleFor(feature)));
 }
 
-Promise.all([
-  fetchJson('data/france/inao_france_detail.geojson'),
-  fetchJson('data/france/search-index.json'),
-]).then(([detailGeo, idx]) => {
-  // 凡例カウントは search-index の denom 単位件数（検索結果数の感覚）
+async function ensureRegionDisplayed(slug) {
+  if (state.currentRegion === slug && regionLayers.has(slug) && map.hasLayer(regionLayers.get(slug))) {
+    return;
+  }
+  spinner.classList.add('visible');
+  spinnerText.textContent = `${slug} の畑データを読み込み中…`;
+  try {
+    if (!regionLayers.has(slug)) {
+      let data = regionCache.get(slug);
+      if (!data) {
+        data = await fetchJson(`data/france/regions/${slug}.geojson`);
+        regionCache.set(slug, data);
+      }
+      const layer = L.geoJSON(data, { style: styleFor, onEachFeature: bindFeature });
+      regionLayers.set(slug, layer);
+    }
+    // 他 region は地図から外す（cache は保持。再訪問時に即時表示）
+    for (const [s, lyr] of regionLayers) {
+      if (s !== slug && map.hasLayer(lyr)) map.removeLayer(lyr);
+    }
+    const layer = regionLayers.get(slug);
+    if (!map.hasLayer(layer)) layer.addTo(map);
+    state.currentRegion = slug;
+  } finally {
+    spinner.classList.remove('visible');
+    spinnerText.textContent = 'データを読み込み中…';
+  }
+}
+
+// === 7. 起動: search-index のみロード ===
+spinner.classList.add('visible');
+fetchJson('data/france/search-index.json').then(idx => {
+  searchIndex = idx;
   for (const e of idx) {
     if (e.hierarchy in hierarchyCounts) hierarchyCounts[e.hierarchy]++;
   }
-
-  detailLayer = L.geoJSON(detailGeo, {
-    style: styleFor,
-    onEachFeature: bindFeature,
-  }).addTo(map);
-
-  searchIndex = idx;
-
-  console.log(`detail: ${detailGeo.features.length} features, search index: ${idx.length} entries`);
-
   renderLegend();
   spinner.classList.remove('visible');
+  console.log(`search index: ${idx.length} entries`);
+  restoreFromUrl();
 }).catch(err => {
   console.error(err);
   spinner.classList.remove('visible');
   alert(`データ読込エラー: ${err.message}\nブラウザの開発者ツール（Console）を確認してください。`);
 });
 
-// === 7. 階層フィルタ（凡例クリック） ===
-function restyleAll() {
-  if (detailLayer) detailLayer.eachLayer(lyr => lyr.setStyle(styleFor(lyr.feature)));
+// === 8. 階層フィルタ（凡例クリック） ===
+function restyleCurrent() {
+  if (!state.currentRegion) return;
+  const layer = regionLayers.get(state.currentRegion);
+  if (layer) layer.eachLayer(lyr => lyr.setStyle(styleFor(lyr.feature)));
 }
 
 legendBody.addEventListener('click', e => {
@@ -188,25 +205,24 @@ legendBody.addEventListener('click', e => {
   if (!row) return;
   const key = row.dataset.hier;
   state.filter[key] = !state.filter[key];
-  restyleAll();
+  restyleCurrent();
   renderLegend();
 });
 
-// === 8. 陰影起伏 overlay 連動 ===
+// === 9. 陰影起伏 overlay 連動 ===
 map.on('overlayadd', e => {
-  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = true; restyleAll(); }
+  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = true; restyleCurrent(); }
 });
 map.on('overlayremove', e => {
-  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = false; restyleAll(); }
+  if (e.name === HILLSHADE_OVERLAY_NAME) { state.hillshadeOn = false; restyleCurrent(); }
 });
 
-// === 9. 検索バー ===
+// === 10. 検索バー ===
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
 
 function normalizeStr(s) {
-  // 大文字小文字 + アクセント記号を除去して比較
-  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function searchEntries(query, max = 20) {
@@ -217,7 +233,6 @@ function searchEntries(query, max = 20) {
     const appN = normalizeStr(e.app);
     const denomN = normalizeStr(e.denom);
     if (appN.includes(q) || denomN.includes(q)) {
-      // ランキング: 完全一致 > 先頭一致 > 含有一致、hierarchy 重要度も考慮
       let score = 0;
       if (appN === q || denomN === q) score = 100;
       else if (appN.startsWith(q) || denomN.startsWith(q)) score = 50;
@@ -268,25 +283,24 @@ searchResults.addEventListener('click', e => {
   flyToEntry(entry);
 });
 
-// 入力欄外クリックで結果を閉じる
 document.addEventListener('click', e => {
   if (!e.target.closest('#search-box')) {
     searchResults.classList.remove('visible');
   }
 });
 
-// 検索結果クリック時に表示するアクティブマーカー（centroid 表示で「ここが検索した AOC」を可視化）
+// === 11. flyToEntry: region をロード → 飛んで marker + popup ===
 let activeMarker = null;
 
-function flyToEntry(entry) {
-  // hierarchy が detail 系なら zoom 13、overview 系なら zoom 9 程度
+async function flyToEntry(entry) {
+  await ensureRegionDisplayed(entry.region);
+
   const isDetail = ['Grand Cru', 'Premier Cru', 'Village'].includes(entry.hierarchy);
   const targetZoom = isDetail ? 13 : 9;
   map.flyTo([entry.lat, entry.lng], targetZoom, { duration: 0.9 });
   searchResults.classList.remove('visible');
   searchInput.value = `${entry.app}${entry.denom !== entry.app ? ' / ' + entry.denom : ''}`;
 
-  // centroid に marker を置く（AOC 階層は detail layer に乗らないため、視覚的なアンカーとして必要）
   if (activeMarker) map.removeLayer(activeMarker);
   const hierMeta = HIER_STYLE[entry.hierarchy] || HIER_STYLE['AOC'];
   activeMarker = L.circleMarker([entry.lat, entry.lng], {
@@ -305,4 +319,21 @@ function flyToEntry(entry) {
       <span class="popup-section-title">地方: </span>${entry.dt || '—'}
       &nbsp;&nbsp;<span class="popup-section-title">県: </span>${entry.dept || '—'}
     </div>`, { maxWidth: 320 }).openPopup();
+
+  updateUrl(entry);
+}
+
+// === 12. URL 状態同期 ===
+function updateUrl(entry) {
+  const params = new URLSearchParams();
+  params.set('denom', entry.denom);
+  history.replaceState(null, '', location.pathname + '?' + params.toString());
+}
+
+function restoreFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const denom = params.get('denom');
+  if (!denom) return;
+  const entry = searchIndex.find(e => e.denom === denom);
+  if (entry) flyToEntry(entry);
 }
