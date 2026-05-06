@@ -72,8 +72,8 @@ L.control.layers(baseLayers, overlayLayers, { position: 'topleft', collapsed: tr
 const HIER_STYLE = {
   'Grand Cru':   { color: '#5a0000', fillColor: '#8b0000', weight: 1.5, fillOpacity: 0.55, label: 'グラン・クリュ', cls: 'grand-cru' },
   'Premier Cru': { color: '#7a2a2a', fillColor: '#c45a5a', weight: 1.0, fillOpacity: 0.45, label: 'プルミエ・クリュ', cls: 'premier-cru' },
-  'Régionale':   { color: '#2a4a8a', fillColor: '#4a6cbd', weight: 0.8, fillOpacity: 0.20, label: 'レジョナル', cls: 'regionale' },
-  'Village':     { color: '#3a6aa0', fillColor: '#87b1de', weight: 0.8, fillOpacity: 0.40, label: 'ヴィラージュ', cls: 'village' },
+  'Village':     { color: '#2a4a8a', fillColor: '#4a6cbd', weight: 0.8, fillOpacity: 0.40, label: 'ヴィラージュ', cls: 'village' },
+  'Régionale':   { color: '#3a6aa0', fillColor: '#87b1de', weight: 0.8, fillOpacity: 0.20, label: 'レジョナル', cls: 'regionale' },
   'AOC':         { color: '#666',    fillColor: '#b0b0b0', weight: 0.5, fillOpacity: 0.30, label: 'AOC（その他）', cls: 'aoc' },
 };
 const HIDDEN_STYLE = { opacity: 0, fillOpacity: 0, weight: 0, interactive: false };
@@ -249,7 +249,7 @@ function searchEntries(query, max = 20) {
       if (appN === q || denomN === q) score = 100;
       else if (appN.startsWith(q) || denomN.startsWith(q)) score = 50;
       else score = 10;
-      const hOrder = { 'Grand Cru': 4, 'Premier Cru': 3, 'Régionale': 2, 'Village': 1, 'AOC': 0 };
+      const hOrder = { 'Grand Cru': 4, 'Premier Cru': 3, 'Village': 2, 'Régionale': 1, 'AOC': 0 };
       score += (hOrder[e.hierarchy] || 0);
       results.push({ entry: e, score });
     }
