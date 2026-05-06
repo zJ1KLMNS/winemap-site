@@ -147,6 +147,17 @@ function bindFeature(feature, lyr) {
   lyr.on('mouseout', () => lyr.setStyle(styleFor(feature)));
 }
 
+// hierarchy 描画順序（前から呼ぶほど bringToFront で背面 → 前面、最後の Grand Cru が最前）
+const HIER_FRONT_ORDER = ['AOC', 'Régionale', 'Village', 'Premier Cru', 'Grand Cru'];
+
+function applyHierarchyOrder(layer) {
+  for (const h of HIER_FRONT_ORDER) {
+    layer.eachLayer(lyr => {
+      if (lyr.feature.properties.hierarchy === h) lyr.bringToFront();
+    });
+  }
+}
+
 async function ensureRegionDisplayed(slug) {
   if (state.currentRegion === slug && regionLayers.has(slug) && map.hasLayer(regionLayers.get(slug))) {
     return;
@@ -169,6 +180,7 @@ async function ensureRegionDisplayed(slug) {
     }
     const layer = regionLayers.get(slug);
     if (!map.hasLayer(layer)) layer.addTo(map);
+    applyHierarchyOrder(layer);
     state.currentRegion = slug;
   } finally {
     spinner.classList.remove('visible');
